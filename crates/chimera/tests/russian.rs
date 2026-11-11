@@ -214,3 +214,49 @@ fn russian_sibilants_are_ordered_and_audible() {
         assert!(zh.0 > z.0 - 6.0, "{body}: ж within 6 dB of з");
     }
 }
+
+// ---------------------------------------------------------------- ы, and phrases sung back to back
+
+#[test]
+fn close_central_vowel_is_unrounded() {
+    // ы (/ɨ/) gets its low F2 from the tongue drawn back, not from the lips: calibrated with a lip
+    // slit (lipAp 0.2) and then with protruded, narrowed lips, it was heard as rounded ("ты" as
+    // "тю"). Open, spread lips as /i/'s; the tongue behind /i/'s.
+    use chimera::phonetics::planner::vowel_artic;
+    for body in [BodyMix::MALE, BodyMix::FEMALE, BodyMix::CHILD] {
+        let (y, i, u) = (vowel_artic("ɨ", body).unwrap(), vowel_artic("i", body).unwrap(), vowel_artic("u", body).unwrap());
+        let g = |p: &chimera::anatomy::human::ArticPatch, k: ArticKey| p.get(k).unwrap();
+        assert!(g(&y, ArticKey::LipAp) > 0.75, "{body:?}: lips open");
+        assert!(g(&y, ArticKey::LipWidth) > 0.8 && g(&y, ArticKey::LipProt) < 0.15, "{body:?}: lips spread, not protruded");
+        assert!(g(&y, ArticKey::LipAp) > 2.0 * g(&u, ArticKey::LipAp), "{body:?}: far from /u/'s lips");
+        assert!(g(&y, ArticKey::TbX) < g(&i, ArticKey::TbX) - 0.5, "{body:?}: the tongue drawn back from /i/");
+    }
+}
+
+#[test]
+fn phrases_sung_back_to_back_keep_their_onsets_voiced() {
+    // "…был? На Фонтанке…": each sung phrase is planned as its own utterance, and its
+    // end-of-breath-group exhale (an abduction for 0.1 s after the phrase, plus its ramp) outlasted
+    // the 0.12 s left before the next phrase and spread over the next phrase's onset: the /n/ of
+    // "на" came out 28 dB below the other /n/'s, unvoiced. No exhale may overlap a sung segment;
+    // the last phrase (followed by a rest) still ends in one.
+    use chimera::phonetics::english::EnglishG2P;
+    use chimera::phonetics::sing::{SongOptions, SungNote, plan_song};
+    let g = EnglishG2P::default();
+    for (lyrics, n) in [
+        ("Чижик[ˈtɕi.ʐɨk] пыжик[ˈpɨ.ʐɨk], где[gdʲe] ты[tɨ] был[bɨɫ]? На[nə] Фонтанке[fɐn.ˈtan.kʲɪ] водку[ˈvot.ku] пил[pʲiɫ].", 14),
+        ("Breathe in, breathe out, I am made of air.", 9),
+    ] {
+        let syls = lyrics_to_syllables(lyrics, &g);
+        assert_eq!(syls.len(), n, "{lyrics}");
+        let notes: Vec<SungNote> = syls.into_iter().enumerate().map(|(k, syl)| SungNote { midi: 55.0 + (k % 5) as f64, beats: 1.0, syl }).collect();
+        let plan = plan_song(&notes, &SongOptions { body: BodyMix::MALE, bpm: 120.0, t0: 0.3, vibrato: 0.35 });
+        let exhales: Vec<_> = plan.gestures.iter().filter(|g| g.label.as_ref().is_some_and(|l| l.as_str() == "exhale")).collect();
+        assert_eq!(exhales.len(), 1, "{lyrics}: one exhale, at the end");
+        for e in &exhales {
+            for s in &plan.segments {
+                assert!(!(s.t0 < e.t1 + e.ramp_out && s.t1 > e.t0), "{lyrics}: the exhale at {:.3} overlaps /{}/ at {:.3}", e.t0, s.ipa, s.t0);
+            }
+        }
+    }
+}

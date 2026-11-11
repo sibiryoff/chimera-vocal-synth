@@ -161,7 +161,12 @@ pub fn plan_song(notes: &[SungNote], o: &SongOptions) -> Plan {
         }
         if !segs.is_empty() {
             // the planner lays segments out from t0 + 0.06: start so the first vowel lands on its beat
-            let plan = plan_utterance(&segs, &PlanOptions { body: o.body, t0: times[i] - first_onset - 0.06, f0: Some(hz_of(i)), intonation: Some(Intonation::Flat), sung: Some(true), ..Default::default() });
+            // a phrase followed straight by the next one (within this call) ends without the
+            // end-of-breath-group exhale: its 0.1 s abduction (plus ramp) outlasted the 0.12 s
+            // reserve and spread over the next phrase's onset consonants, unvoicing them: the
+            // /n/ of "на" after "был?" came out 28 dB below the other /n/'s, with no voicing
+            let open_end = j < notes.len() - 1;
+            let plan = plan_utterance(&segs, &PlanOptions { body: o.body, t0: times[i] - first_onset - 0.06, f0: Some(hz_of(i)), intonation: Some(Intonation::Flat), sung: Some(true), open_end: Some(open_end), ..Default::default() });
             gestures.extend_from_slice(&plan.gestures);
             segments.extend(plan.segments);
             for (a, b) in vowel_spans {

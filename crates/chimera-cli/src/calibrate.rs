@@ -164,6 +164,15 @@ pub fn vowels(a: &[String]) -> Result<(), String> {
                     c += 0.05 * pow(js_max(0.0, 0.55 - p[5]), 2.0)
                         + 0.05 * pow(js_max(0.0, p[4] - 0.35), 2.0)
                         + 0.03 * pow(js_max(0.0, (p[3] - ap_prior).abs() - 0.35), 2.0);
+                    // a close unrounded vowel behind /i/ (/ɨ ɯ/) gets its low F2 from the tongue,
+                    // not from the lips: the fit had /ɨ/'s lips at a 0.2 slit (/u/'s are 0.29), and
+                    // with the slit ruled out it protruded and narrowed them instead; a listener
+                    // heard either as rounded (Russian "ты" as "тю"). Lips open and spread, as /i/'s.
+                    if vw.height < 0.1 && vw.back > 0.3 {
+                        c += 0.5 * pow(js_max(0.0, 0.8 - p[3]), 2.0)
+                            + 0.5 * pow(js_max(0.0, 0.85 - p[5]), 2.0)
+                            + 0.5 * pow(js_max(0.0, p[4] - 0.1), 2.0);
+                    }
                 }
                 c += 0.002 * p[6] * p[6] + 0.006 * p[7] * p[7];
                 // the tongue body near where the vowel's height and backness put it: many postures
