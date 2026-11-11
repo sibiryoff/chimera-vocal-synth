@@ -260,3 +260,29 @@ fn phrases_sung_back_to_back_keep_their_onsets_voiced() {
         }
     }
 }
+
+#[test]
+fn y_is_an_onglide_into_i() {
+    // ы is [ˠi] (Padgett, Bennett et al. 2024): a short back onglide, then a front vowel that ends
+    // where /i/ does. A steady central [ɨ], even unrounded, was heard as between у and ю.
+    use chimera::phonetics::english::EnglishG2P;
+    use chimera::phonetics::sing::{NoteOnOptions, SongOptions, SungNote, plan_note_on, plan_song};
+    // speech: a third on [ɯ], the rest on [i]
+    let p = plan_utterance(&tokenize_ipa("ˈtɨ"), &PlanOptions { body: BodyMix::MALE, t0: 0.0, ..Default::default() });
+    let v: Vec<_> = p.segments.iter().filter(|s| s.kind == "vowel").collect();
+    assert_eq!(v.iter().map(|s| s.ipa.as_str()).collect::<Vec<_>>(), ["ɯ", "i"]);
+    assert!(v[0].t1 - v[0].t0 < 0.6 * (v[1].t1 - v[1].t0), "the onglide is the shorter part");
+    // a sung note: at most 80 ms of onglide, the note held on [i]; its melisma notes on [i] only
+    let g = EnglishG2P::default();
+    let syls = lyrics_to_syllables("ты[tɨ] ~ был[bɨɫ]", &g);
+    let notes: Vec<SungNote> = syls.into_iter().map(|syl| SungNote { midi: 55.0, beats: 1.0, syl }).collect();
+    let plan = plan_song(&notes, &SongOptions { body: BodyMix::MALE, bpm: 100.0, t0: 0.3, vibrato: 0.0 });
+    let v: Vec<(&str, f64)> = plan.segments.iter().filter(|s| s.kind == "vowel").map(|s| (s.ipa.as_str(), s.t1 - s.t0)).collect();
+    assert_eq!(v.iter().map(|x| x.0).collect::<Vec<_>>(), ["ɯ", "i", "i", "ɯ", "i"], "{v:?}");
+    assert!(v[0].1 <= 0.08 + 1e-9 && v[3].1 <= 0.08 + 1e-9, "{v:?}");
+    // a live note holds [i]
+    let syl = &lyrics_to_syllables("ты[tɨ]", &g)[0];
+    let on = plan_note_on(syl, 55.0, &NoteOnOptions { body: BodyMix::MALE, vibrato: 0.0, tag: 1.0, legato_from: None });
+    let labels: Vec<&str> = on.iter().filter_map(|g| g.label.as_ref().map(|l| l.as_str())).collect();
+    assert!(labels.contains(&"ɯ") && labels.contains(&"i"), "{labels:?}");
+}
