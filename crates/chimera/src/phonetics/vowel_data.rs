@@ -60,7 +60,10 @@ pub static VOWELS: &[VowelRef] = &[
     vref("y", "Fr. tu", [300.0, 1800.0, 2150.0], None, None, true, 0.0, 0.0),
     vref("ø", "Fr. peu", [390.0, 1550.0, 2250.0], None, None, true, 0.3, 0.1),
     vref("œ", "Fr. peur", [520.0, 1450.0, 2350.0], None, None, true, 0.55, 0.15),
-    vref("ɨ", "close central", [330.0, 1600.0, 2400.0], None, None, false, 0.0, 0.5),
+    // Russian ы, steady part: a slightly retracted [i], about as front as [e] (Padgett, Bennett et al.
+    // 2024); its back onset belongs to the velarized consonant before it (see plan_utterance).
+    // At the textbook close-central F2 of 1600 it was heard as between у and ю.
+    vref("ɨ", "close central (Russian ы)", [330.0, 1850.0, 2500.0], None, None, false, 0.0, 0.5),
     vref("ɯ", "close back unrounded", [340.0, 1350.0, 2400.0], None, None, false, 0.0, 1.0),
     vref("ɤ", "close-mid back unrounded", [460.0, 1250.0, 2450.0], None, None, false, 0.35, 1.0),
 ];

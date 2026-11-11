@@ -13,7 +13,7 @@
 
 use super::inventory::phoneme;
 use crate::anatomy::human::BodyMix;
-use super::planner::{PlanOptions, diphthong_parts, is_rising, plan_utterance};
+use super::planner::{PlanOptions, diphthong_parts, plan_utterance};
 use super::{Intonation, Plan, PlannedSegment, Segment, Syllable};
 use crate::control::score::{ControlKey, Gesture, Targets};
 use crate::math::{js_max, js_min};
@@ -147,15 +147,6 @@ pub fn plan_song(notes: &[SungNote], o: &SongOptions) -> Plan {
             segs.extend(onset);
             let parts = diphthong_parts(&n.syl.nucleus.ipa);
             match parts {
-                // a rising diphthong (ы): a short onglide, then the second vowel holds the note
-                // (and the melisma notes after it)
-                Some((a, b)) if is_rising(&n.syl.nucleus.ipa) => {
-                    let on = if melisma(&n.syl) { 0.0 } else { js_min(SUNG_ONGLIDE, 0.3 * vdur) };
-                    if on > 0.0 {
-                        segs.push(Segment { ipa: a.to_string(), dur: Some(on), f0: Some(hz), stress: Some(1), word_end: None });
-                    }
-                    segs.push(Segment { ipa: b.to_string(), dur: Some(vdur - on), f0: Some(hz), stress: Some(1), word_end: None });
-                }
                 Some((a, b)) if !next_melisma => {
                     segs.push(Segment { ipa: a.to_string(), dur: Some(vdur * 0.8), f0: Some(hz), stress: Some(1), word_end: None });
                     segs.push(Segment { ipa: b.to_string(), dur: Some(vdur * 0.2), f0: Some(hz), stress: Some(1), word_end: None });
@@ -222,9 +213,6 @@ pub struct NoteOnOptions {
     pub legato_from: Option<LegatoFrom>,
 }
 
-/// a sung rising diphthong's onglide (ы), at most; it takes at most 30% of a written note
-const SUNG_ONGLIDE: f64 = 0.08;
-
 /// Key pressed: sing the previous syllable's glide and coda if it is still sounding (legato),
 /// then this syllable's onset, then its vowel held open-ended. Every gesture gets `tag`; the
 /// pitch and vibrato get `tag + 1`, so a melisma can change pitch without ending the vowel.
@@ -236,15 +224,7 @@ pub fn plan_note_on(syl: &Syllable, midi: f64, o: &NoteOnOptions) -> Vec<Gesture
     }
     segs.extend(consonants(&syl.onset, o.body, 0.7));
     let parts = diphthong_parts(&syl.nucleus.ipa);
-    let held = match parts {
-        // a rising diphthong glides in and holds its second vowel
-        Some((a, b)) if is_rising(&syl.nucleus.ipa) => {
-            segs.push(Segment { ipa: a.to_string(), dur: Some(SUNG_ONGLIDE), f0: Some(hz), stress: Some(1), word_end: None });
-            b.to_string()
-        }
-        _ => parts.map_or(syl.nucleus.ipa.clone(), |p| p.0.to_string()),
-    };
-    segs.push(Segment { ipa: held, dur: Some(HOLD), f0: Some(hz), stress: Some(1), word_end: None });
+    segs.push(Segment { ipa: parts.map_or(syl.nucleus.ipa.clone(), |p| p.0.to_string()), dur: Some(HOLD), f0: Some(hz), stress: Some(1), word_end: None });
     let plan = plan_utterance(&segs, &PlanOptions { body: o.body, t0: LIVE_T0, f0: Some(hz), intonation: Some(Intonation::Flat), open_end: Some(true), ..Default::default() });
     let vowel = &plan.segments[plan.segments.len() - 1];
     let mut out: Vec<Gesture> = plan.gestures.iter().map(|g| g.tag(if g.targets.has(ControlKey::F0) { o.tag + 1.0 } else { o.tag })).collect();
@@ -280,7 +260,7 @@ pub fn plan_note_off(syl: &Syllable, midi: f64, body: BodyMix) -> Vec<Gesture> {
 
 /// What follows a held vowel: the diphthong's glide (at the note's pitch) and the coda.
 fn tail(syl: &Syllable, body: BodyMix, hz: f64) -> Vec<Segment> {
-    let parts = diphthong_parts(&syl.nucleus.ipa).filter(|_| !is_rising(&syl.nucleus.ipa));
+    let parts = diphthong_parts(&syl.nucleus.ipa);
     let mut out: Vec<Segment> = Vec::new();
     if let Some((_, b)) = parts {
         out.push(Segment { ipa: b.to_string(), dur: Some(0.07), stress: Some(1), f0: Some(hz), word_end: None });

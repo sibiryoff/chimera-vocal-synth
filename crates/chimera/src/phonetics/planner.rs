@@ -52,25 +52,9 @@ pub fn expand(ipa: &str) -> Option<&'static [&'static str]> {
         "eɪ" => &["e", "i"],
         "oʊ" => &["o", "u"],
         "ɚ" => &["ɝ"],
-        // Russian ы: see [`is_rising`]
-        "ɨ" => &["ɯ", "i"],
         _ => return None,
     })
 }
-
-/// A rising diphthong: a short onglide into the vowel that holds (the others hold their first
-/// vowel and glide late). Russian ы is not a steady central [ɨ] but [ˠi]: the back tongue of the
-/// velarized consonant, then a front vowel that ends where /i/ does (Padgett, Bennett et al. 2024,
-/// "Russian palatalization is a matter of the tongue body"). A steady [ɨ] (F2 1665 Hz, male) was
-/// heard as between у and ю. Its onglide starts from [ɯ] (F2 1490), not [ɨ]: a part must not
-/// expand again when a sung note hands it back to [`plan_utterance`].
-pub fn is_rising(ipa: &str) -> bool {
-    ipa == "ɨ"
-}
-
-/// the share of a rising diphthong's duration spent on its onglide, in speech (in Padgett et al.'s
-/// бы the F2 rise takes about the first third)
-pub const ONGLIDE_SHARE: f64 = 0.35;
 
 /// The two vowel targets of a diphthong ("aɪ" → ("a", "ɪ")), or None.
 pub fn diphthong_parts(ipa: &str) -> Option<(&'static str, &'static str)> {
@@ -210,10 +194,8 @@ pub fn plan_utterance(input: &[Segment], o: &PlanOptions) -> Plan {
     for (si, s) in input.iter().enumerate() {
         if let Some(parts) = expand(&s.ipa) {
             let base = durs[si];
-            // (0.45 written out: 1.0 - 0.55 is not 0.45 in floating point)
-            let (first, second) = if is_rising(&s.ipa) { (ONGLIDE_SHARE, 1.0 - ONGLIDE_SHARE) } else { (0.55, 0.45) };
             for (i, p) in parts.iter().enumerate() {
-                let dur = if parts.len() > 1 { base * (if i == 0 { first } else { second }) } else { base };
+                let dur = if parts.len() > 1 { base * (if i == 0 { 0.55 } else { 0.45 }) } else { base };
                 segs.push(Seg { ipa: p, dur: Some(dur), stress: s.stress, f0: s.f0, def: None, vowel: None, glide_from: i > 0 });
             }
         } else {
@@ -278,6 +260,17 @@ pub fn plan_utterance(input: &[Segment], o: &PlanOptions) -> Plan {
         });
         let Some(def) = s.def.as_ref() else { continue };
         let next_vowel = i < segs.len() - 1 && segs[i + 1].vowel.is_some();
+        // Russian ы is [ˠi] (Padgett, Bennett et al. 2024, "Russian palatalization is a matter of
+        // the tongue body"): the back tongue belongs to the hard consonant before it, and the
+        // vowel is a steady, slightly retracted [i]. So the consonant is velarized (its body held
+        // at [ɯ]'s, as strong as a soft consonant's palatal body) and its release carries the F2
+        // rise into the vowel. Gliding inside the vowel instead was heard as two vowels, "ыи".
+        if next_vowel && segs[i + 1].ipa == "ɨ" && !def.ipa.ends_with('ʲ') && !matches!(def.ipa, "j" | "ɕ" | "ʑ" | "tɕ" | "dʑ" | "c" | "ɟ" | "ç" | "ʝ" | "ɲ" | "ʎ") {
+            if let Some(v) = vowel_artic("ɯ", body) {
+                let tb = |k: ArticKey| v.get(k).unwrap_or(0.0);
+                gestures.push(Gesture::new(t0, t1, 0.04, 0.03, 2.2, Targets::default().with(ArticKey::TbX, tb(ArticKey::TbX)).with(ArticKey::TbY, tb(ArticKey::TbY))).label("velarization"));
+            }
+        }
         let prev_seg = if i > 0 { Some(&segs[i - 1]) } else { None };
         let mut add_oral = |tg: &ArticPatch, a: f64, b: f64, speed: f64, label: &str| oral_gestures_into(def, tg, a, b, speed, label, &mut gestures);
         match def.manner {

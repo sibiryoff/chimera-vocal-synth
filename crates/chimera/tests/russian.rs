@@ -219,18 +219,33 @@ fn russian_sibilants_are_ordered_and_audible() {
 
 #[test]
 fn close_central_vowel_is_unrounded() {
-    // ы (/ɨ/) gets its low F2 from the tongue drawn back, not from the lips: calibrated with a lip
-    // slit (lipAp 0.2) and then with protruded, narrowed lips, it was heard as rounded ("ты" as
-    // "тю"). Open, spread lips as /i/'s; the tongue behind /i/'s.
+    // ы (/ɨ/): its steady part is a slightly retracted [i] with /i/'s lips. Calibrated with a lip
+    // slit (lipAp 0.2), then with protruded narrowed lips, at a textbook close-central F2 of 1600,
+    // it was heard as rounded ("ты" as "тю", then between у and ю).
     use chimera::phonetics::planner::vowel_artic;
     for body in [BodyMix::MALE, BodyMix::FEMALE, BodyMix::CHILD] {
-        let (y, i, u) = (vowel_artic("ɨ", body).unwrap(), vowel_artic("i", body).unwrap(), vowel_artic("u", body).unwrap());
+        let (y, i, w) = (vowel_artic("ɨ", body).unwrap(), vowel_artic("i", body).unwrap(), vowel_artic("ɯ", body).unwrap());
         let g = |p: &chimera::anatomy::human::ArticPatch, k: ArticKey| p.get(k).unwrap();
-        assert!(g(&y, ArticKey::LipAp) > 0.75, "{body:?}: lips open");
-        assert!(g(&y, ArticKey::LipWidth) > 0.8 && g(&y, ArticKey::LipProt) < 0.15, "{body:?}: lips spread, not protruded");
-        assert!(g(&y, ArticKey::LipAp) > 2.0 * g(&u, ArticKey::LipAp), "{body:?}: far from /u/'s lips");
-        assert!(g(&y, ArticKey::TbX) < g(&i, ArticKey::TbX) - 0.5, "{body:?}: the tongue drawn back from /i/");
+        assert!(g(&y, ArticKey::LipAp) >= 0.98 && g(&y, ArticKey::LipWidth) >= 0.94 && g(&y, ArticKey::LipProt) <= 0.03, "{body:?}: /i/'s lips");
+        assert!(g(&w, ArticKey::TbX) < g(&y, ArticKey::TbX) && g(&y, ArticKey::TbX) < g(&i, ArticKey::TbX), "{body:?}: the tongue between [ɯ] and [i]");
     }
+}
+
+#[test]
+fn hard_consonant_before_y_is_velarized() {
+    // ы is [ˠi] (Padgett, Bennett et al. 2024): the back tongue is the consonant's. An onglide
+    // inside the vowel ([ɯ] then [i]) was heard as two vowels, "ыи".
+    let velarized = |ipa: &str| {
+        let p = plan_utterance(&tokenize_ipa(ipa), &PlanOptions { body: BodyMix::MALE, t0: 0.0, ..Default::default() });
+        assert_eq!(p.segments.iter().filter(|s| s.kind == "vowel").count(), 1, "{ipa}: one vowel");
+        p.gestures.iter().filter(|g| g.label.as_ref().is_some_and(|l| l.as_str() == "velarization")).count()
+    };
+    assert_eq!(velarized("ˈtɨ"), 1);
+    assert_eq!(velarized("ˈbɨɫ"), 1);
+    assert_eq!(velarized("ˈʐɨk"), 1);
+    assert_eq!(velarized("ˈtʲi"), 0);
+    assert_eq!(velarized("ˈti"), 0);
+    assert_eq!(velarized("ˈtu"), 0);
 }
 
 #[test]
@@ -244,7 +259,7 @@ fn phrases_sung_back_to_back_keep_their_onsets_voiced() {
     use chimera::phonetics::sing::{SongOptions, SungNote, plan_song};
     let g = EnglishG2P::default();
     for (lyrics, n) in [
-        ("Чижик[ˈtɕi.ʐɨk] пыжик[ˈpɨ.ʐɨk], где[gdʲe] ты[tɨ] был[bɨɫ]? На[nə] Фонтанке[fɐn.ˈtan.kʲɪ] водку[ˈvot.ku] пил[pʲiɫ].", 14),
+        ("Чижик[ˈtɕi.ʐɨk] пыжик[ˈpɨ.ʐɨk], где[gdʲe] ты[tɨ] был[bɨɫ]? На[na] Фонтанке[fɐn.ˈtan.kʲɪ] водку[ˈvot.ku] пил[pʲiɫ].", 14),
         ("Breathe in, breathe out, I am made of air.", 9),
     ] {
         let syls = lyrics_to_syllables(lyrics, &g);
@@ -259,30 +274,4 @@ fn phrases_sung_back_to_back_keep_their_onsets_voiced() {
             }
         }
     }
-}
-
-#[test]
-fn y_is_an_onglide_into_i() {
-    // ы is [ˠi] (Padgett, Bennett et al. 2024): a short back onglide, then a front vowel that ends
-    // where /i/ does. A steady central [ɨ], even unrounded, was heard as between у and ю.
-    use chimera::phonetics::english::EnglishG2P;
-    use chimera::phonetics::sing::{NoteOnOptions, SongOptions, SungNote, plan_note_on, plan_song};
-    // speech: a third on [ɯ], the rest on [i]
-    let p = plan_utterance(&tokenize_ipa("ˈtɨ"), &PlanOptions { body: BodyMix::MALE, t0: 0.0, ..Default::default() });
-    let v: Vec<_> = p.segments.iter().filter(|s| s.kind == "vowel").collect();
-    assert_eq!(v.iter().map(|s| s.ipa.as_str()).collect::<Vec<_>>(), ["ɯ", "i"]);
-    assert!(v[0].t1 - v[0].t0 < 0.6 * (v[1].t1 - v[1].t0), "the onglide is the shorter part");
-    // a sung note: at most 80 ms of onglide, the note held on [i]; its melisma notes on [i] only
-    let g = EnglishG2P::default();
-    let syls = lyrics_to_syllables("ты[tɨ] ~ был[bɨɫ]", &g);
-    let notes: Vec<SungNote> = syls.into_iter().map(|syl| SungNote { midi: 55.0, beats: 1.0, syl }).collect();
-    let plan = plan_song(&notes, &SongOptions { body: BodyMix::MALE, bpm: 100.0, t0: 0.3, vibrato: 0.0 });
-    let v: Vec<(&str, f64)> = plan.segments.iter().filter(|s| s.kind == "vowel").map(|s| (s.ipa.as_str(), s.t1 - s.t0)).collect();
-    assert_eq!(v.iter().map(|x| x.0).collect::<Vec<_>>(), ["ɯ", "i", "i", "ɯ", "i"], "{v:?}");
-    assert!(v[0].1 <= 0.08 + 1e-9 && v[3].1 <= 0.08 + 1e-9, "{v:?}");
-    // a live note holds [i]
-    let syl = &lyrics_to_syllables("ты[tɨ]", &g)[0];
-    let on = plan_note_on(syl, 55.0, &NoteOnOptions { body: BodyMix::MALE, vibrato: 0.0, tag: 1.0, legato_from: None });
-    let labels: Vec<&str> = on.iter().filter_map(|g| g.label.as_ref().map(|l| l.as_str())).collect();
-    assert!(labels.contains(&"ɯ") && labels.contains(&"i"), "{labels:?}");
 }
