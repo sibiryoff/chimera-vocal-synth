@@ -54,6 +54,11 @@ fn table(ipa: &str) -> Option<(f64, f64)> {
         "z" => (75.0, 40.0),
         "ʃ" => (105.0, 80.0),
         "ʒ" => (70.0, 40.0),
+        // alveolo-palatals (not in Klatt's table): as the postalveolars
+        "ɕ" => (105.0, 80.0),
+        "ʑ" => (70.0, 40.0),
+        "tɕ" => (70.0, 50.0),
+        "dʑ" => (50.0, 30.0),
         "h" => (80.0, 20.0),
         "m" => (70.0, 60.0),
         "n" => (60.0, 50.0),
@@ -114,7 +119,8 @@ pub fn klatt_durations(segs: &[Segment], info: impl Fn(&Segment) -> SegInfo) -> 
                 return d;
             }
             let fallback = inf[i].dur.unwrap_or(0.08);
-            let (inh0, min0) = table(&s.ipa).unwrap_or((1000.0 * fallback, 600.0 * fallback));
+            // a palatalized consonant times as its plain form ("tʲ" as "t")
+            let (inh0, min0) = table(&s.ipa).or_else(|| s.ipa.strip_suffix('ʲ').and_then(table)).unwrap_or((1000.0 * fallback, 600.0 * fallback));
             let (inh, mut min, mut p) = (inh0, min0, 1.0f64);
             if inf[i].vowel {
                 let stress = s.stress.unwrap_or(0);

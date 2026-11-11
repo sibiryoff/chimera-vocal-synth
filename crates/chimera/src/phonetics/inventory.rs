@@ -148,7 +148,96 @@ const NONE: Tg = &[];
 
 const TIP_CURL: &[ArticKey] = &[TtX, TtY, TtCurl];
 
+/// Palatalization (Russian "soft" consonants, IPA ʲ): the tongue body raised and fronted toward
+/// /j/ as a secondary articulation. It sits below /j/ (3.8, 7.95) and well below the palatal
+/// fricative's calibrated 7.93, and reaches the planner as a secondary gesture (strength 2.2 against
+/// the vowel's 1.0), so it colours the transitions (F2 up) without making a palatal constriction.
+const PALATAL_BODY: Tg = &[(TbX, 3.75), (TbY, 7.8)];
+
+/// /ɕ ʑ/: the blade behind the alveolar ridge, the body raised as in [`PALATAL_BODY`], the lips
+/// only slightly rounded (/ʃ ʒ/ protrude them to 0.75)
+const ALVEOLO_PALATAL: Tg = &[(TtX, 5.85), (TtY, 9.45), (Jaw, 0.35), (LipProt, 0.35), (LipWidth, 0.45), (TbX, 3.75), (TbY, 7.8)];
+/// /tɕ dʑ/: the postalveolar closure with the same body and lips
+const ALVEOLO_PALATAL_AFFRICATE: Tg = &[(LipProt, 0.35), (LipWidth, 0.45), (TbX, 3.75), (TbY, 7.8)];
+
+/// Plain consonant → its palatalized form (the plain articulation plus [`PALATAL_BODY`]).
+/// Velars are not here: soft /kʲ gʲ xʲ/ move the closure itself forward and are defined from the
+/// palatals in [`base`].
+#[rustfmt::skip]
+const SOFT: &[(&str, &str, &str)] = &[
+    ("p", "pʲ", "palatalized voiceless bilabial stop"),
+    ("b", "bʲ", "palatalized voiced bilabial stop"),
+    ("t", "tʲ", "palatalized voiceless alveolar stop"),
+    ("d", "dʲ", "palatalized voiced alveolar stop"),
+    ("m", "mʲ", "palatalized bilabial nasal"),
+    ("n", "nʲ", "palatalized alveolar nasal"),
+    ("f", "fʲ", "palatalized voiceless labiodental fricative"),
+    ("v", "vʲ", "palatalized voiced labiodental fricative"),
+    ("s", "sʲ", "palatalized voiceless alveolar fricative"),
+    ("z", "zʲ", "palatalized voiced alveolar fricative"),
+    ("l", "lʲ", "palatalized alveolar lateral approximant"),
+    ("r", "rʲ", "palatalized alveolar trill"),
+    ("ɾ", "ɾʲ", "palatalized alveolar tap"),
+];
+
+/// Soft velars: the closure moves forward to the palatal place (Russian кь гь хь ≈ [c ɟ ç]).
+#[rustfmt::skip]
+const SOFT_VELAR: &[(&str, &str, &str)] = &[
+    ("c", "kʲ", "palatalized voiceless velar stop"),
+    ("ɟ", "gʲ", "palatalized voiced velar stop"),
+    ("ç", "xʲ", "palatalized voiceless velar fricative"),
+];
+
+/// Which calibrated entry a symbol borrows when it has none of its own: a palatalized consonant
+/// its plain form's (the calibrated coordinate is the primary constriction, which palatalization
+/// leaves alone), the soft velars the palatals they are built from, /ɕ ʑ/ the postalveolars.
+/// Slices, so it allocates nothing.
+fn cal_source(ipa: &str) -> &str {
+    match ipa {
+        "kʲ" => "c",
+        "gʲ" => "ɟ",
+        "xʲ" => "ç",
+        "ɕ" => "ʃ",
+        "ʑ" => "ʒ",
+        _ => ipa.strip_suffix('ʲ').unwrap_or(ipa),
+    }
+}
+
 fn base() -> Vec<PhonemeDef> {
+    let mut v = plain();
+    // The derived symbols are not calibrated themselves (no `area`): `chimera calibrate consonants`
+    // skips them and the committed table stays as it is; [`phoneme`] gives them their source's
+    // calibrated coordinate through [`cal_source`].
+    let find = |v: &[PhonemeDef], ipa: &str| {
+        let mut d = *v.iter().find(|p| p.ipa == ipa).unwrap_or_else(|| panic!("inventory: no {ipa}"));
+        d.area = None;
+        d.cal_key = None;
+        d
+    };
+    for &(plain, soft, name) in SOFT {
+        let mut d = find(&v, plain);
+        d.ipa = soft;
+        d.name = name;
+        for (k, x) in PALATAL_BODY {
+            d.targets.set(*k, *x);
+        }
+        v.push(d);
+    }
+    for &(palatal, soft, name) in SOFT_VELAR {
+        let mut d = find(&v, palatal);
+        d.ipa = soft;
+        d.name = name;
+        v.push(d);
+    }
+    // Russian щ (ɕː) and ч (tɕ), and their voiced partners (/ɕ ʑ/ borrow /ʃ ʒ/'s calibration)
+    v.push(c("ɕ", "voiceless alveolo-palatal fricative", M::Fricative, Voiceless, "postalveolar", tg(ALVEOLO_PALATAL, NONE), &[TtX, TtY, Jaw], 0.12));
+    v.push(c("ʑ", "voiced alveolo-palatal fricative", M::Fricative, Voiced, "postalveolar", tg(ALVEOLO_PALATAL, NONE), &[TtX, TtY, Jaw], 0.09));
+    v.push(c("tɕ", "voiceless alveolo-palatal affricate", M::Affricate, Voiceless, "postalveolar", tg(POSTALV_STOP, ALVEOLO_PALATAL_AFFRICATE), &TIP, 0.15).rel("ɕ"));
+    v.push(c("dʑ", "voiced alveolo-palatal affricate", M::Affricate, Voiced, "postalveolar", tg(POSTALV_STOP, ALVEOLO_PALATAL_AFFRICATE), &TIP, 0.13).rel("ʑ"));
+    v
+}
+
+fn plain() -> Vec<PhonemeDef> {
     let t = |a: Tg| tg(a, NONE);
     vec![
         // stops
@@ -246,7 +335,7 @@ fn by_ipa(ipa: &str) -> Option<&'static PhonemeDef> {
 /// is `Copy`).
 pub fn phoneme(ipa: &str, body: BodyMix) -> Option<PhonemeDef> {
     let p = by_ipa(ipa)?;
-    let of = |b: BodyName| match CAL.get(b.as_str()).and_then(|t| t.get(ipa)) {
+    let of = |b: BodyName| match CAL.get(b.as_str()).and_then(|t| t.get(ipa).or_else(|| t.get(cal_source(ipa)))) {
         Some(cal) => {
             let mut t = p.targets;
             t.merge(cal);

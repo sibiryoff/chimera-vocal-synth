@@ -27,6 +27,9 @@ for tests and the `chimera` CLI.
 - **Speak**: English text (CMUdict with a letter-to-sound fallback) or IPA, turned into
   gestures and prosody, with the gestural score and a consonant chart on screen.
 - **Sing**: piano roll with lyrics per note; consonants land before the beat.
+- **Other languages through IPA**: palatalized (Russian "soft") consonants `tʲ lʲ kʲ …` and
+  `ɕ ʑ tɕ dʑ` (`ʃʲ ʒʲ` read as `ɕ ʑ`); lyrics in brackets skip the dictionary, with the
+  text for the notes in front and dots for syllable breaks: `песня[ˈpʲe.sʲnʲə]`, `[zvʲɪzˈda]`.
 - **Beatbox**: pads and a step sequencer, every drum an articulatory gesture.
 - **Bestiary**: songbird (two-voice syrinx), seal, alligator and elephant.
 - **Duet** (`?show=<id>`): two 3D heads replay a pre-rendered song.

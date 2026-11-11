@@ -3,9 +3,15 @@
 //! onset clusters, and the spelling is split to match for display ("twin-kle").
 //! Typed hyphens force syllable breaks; a lone "-" (or "~") holds the previous vowel onto the
 //! next note (melisma), as in vocaloid editors.
+//!
+//! IPA in square brackets bypasses the dictionary, for any language: `[ˈpʲe.sʲnʲə]`, or with the
+//! text to show on the notes in front, `песня[ˈpʲe.sʲnʲə]`. Dots (or hyphens) mark syllable
+//! breaks; without them the consonants between two vowels start the next syllable (open
+//! syllables, as sung), except a /j/ before another consonant ("voj.na").
 
 use crate::anatomy::human::BodyMix;
 use super::english::js_is_space;
+use super::ipa::tokenize_ipa;
 use super::planner::is_vowel;
 use super::{Segment, Syllable};
 use serde::{Deserialize, Serialize};
@@ -60,7 +66,11 @@ pub fn syllabify_segments(segs: &[Segment]) -> Vec<SyllableParts> {
 
 // The spelling is indexed in UTF-16 code units, as the JS string was.
 fn is_spell_vowel(c: u16) -> bool {
-    "aeiouy".bytes().any(|v| v as u16 == c)
+    "aeiouy".bytes().any(|v| v as u16 == c) || is_cyrillic_vowel(c)
+}
+/// lowercase Cyrillic vowel letters (Russian, Ukrainian, Belarusian), all in the BMP
+fn is_cyrillic_vowel(c: u16) -> bool {
+    "аеёиоуыэюяіїєў".encode_utf16().any(|v| v == c)
 }
 fn is_spell_vowel_ci(c: u16) -> bool {
     "aeiouyAEIOUY".bytes().any(|v| v as u16 == c)
@@ -151,13 +161,30 @@ fn is_word_start(c: char) -> bool {
     c.is_ascii_alphabetic() || c == '\''
 }
 
-/// `text.match(/[A-Za-z'][A-Za-z'\-]*|(?<=\s|^)[~-](?=\s|$)|[.,;:!?\n]/g)`
+/// `text.match(/[A-Za-z'][A-Za-z'\-]*|(?<=\s|^)[~-](?=\s|$)|[.,;:!?\n]/g)`, plus IPA words:
+/// `[ipa]` or `text[ipa]` (any letters in front, up to the bracket), kept whole as one token.
 fn lyric_tokens(text: &str) -> Vec<String> {
     let s: Vec<char> = text.chars().collect();
     let mut out = Vec::new();
     let mut i = 0;
     while i < s.len() {
         let c = s[i];
+        if c == '[' || c.is_alphabetic() || c == '\'' {
+            // display text (possibly empty) running straight into a bracket: an IPA word
+            let mut j = i;
+            while j < s.len() && s[j] != '[' && s[j] != ']' && !js_is_space(s[j]) {
+                j += 1;
+            }
+            if s.get(j) == Some(&'[') {
+                let mut k = j + 1;
+                while k < s.len() && s[k] != ']' {
+                    k += 1;
+                }
+                out.push(s[i..k.min(s.len())].iter().chain(std::iter::once(&']')).collect());
+                i = k + 1;
+                continue;
+            }
+        }
         if is_word_start(c) {
             let start = i;
             i += 1;
@@ -195,6 +222,10 @@ pub fn lyrics_to_syllables(text: &str, g2p: &impl WordSource) -> Vec<Syllable> {
             }
             continue;
         }
+        if let Some((display, ipa)) = ipa_token(tok) {
+            out.append(&mut ipa_syllables(display, ipa));
+            continue;
+        }
         // typed hyphens split syllables explicitly ("ti-ger"); otherwise the dictionary decides
         let parts: Vec<&str> = tok.split('-').filter(|p| !p.is_empty()).collect();
         let mut syls: Vec<Syllable> = Vec::new();
@@ -217,4 +248,61 @@ pub fn lyrics_to_syllables(text: &str, g2p: &impl WordSource) -> Vec<Syllable> {
         out.append(&mut syls);
     }
     out
+}
+
+/// `text[ipa]` → ("text", "ipa")
+fn ipa_token(tok: &str) -> Option<(&str, &str)> {
+    let (display, rest) = tok.split_once('[')?;
+    Some((display, rest.strip_suffix(']')?))
+}
+
+/// One bracketed IPA lyric → syllables (each IPA word ends a word). Dots and hyphens are explicit
+/// syllable breaks; elsewhere consonants between vowels open the next syllable, but a /j/ that
+/// precedes another consonant closes the one before ("voj.na", "ma.jor").
+fn ipa_syllables(display: &str, ipa: &str) -> Vec<Syllable> {
+    let mut parts: Vec<(SyllableParts, bool)> = Vec::new();
+    for word in ipa.split(js_is_space).filter(|w| !w.is_empty()) {
+        // the tokenizer marks a "." with word_end on the segment before it: that is our break
+        let mut segs: Vec<Segment> = tokenize_ipa(&word.replace('-', ".")).into_iter().filter(|s| s.ipa != "_").collect();
+        let breaks: Vec<bool> = segs.iter().map(|s| s.word_end == Some(true)).collect();
+        for s in segs.iter_mut() {
+            s.word_end = None;
+        }
+        let vi: Vec<usize> = segs.iter().enumerate().filter(|(_, s)| is_vowel(&s.ipa, BodyMix::MALE)).map(|(i, _)| i).collect();
+        let Some(&last_v) = vi.last() else { continue };
+        let mut start = 0;
+        for (n, &v) in vi.iter().enumerate() {
+            let end = match vi.get(n + 1) {
+                Some(&next) => match (v..next).find(|&k| breaks[k]) {
+                    Some(k) => k + 1,
+                    None => {
+                        let mut k = v + 1;
+                        while k + 1 < next && segs[k].ipa == "j" {
+                            k += 1;
+                        }
+                        k
+                    }
+                },
+                None => segs.len(),
+            };
+            let sp = SyllableParts { onset: segs[start..v].to_vec(), nucleus: segs[v].clone(), coda: segs[v + 1..end].to_vec() };
+            parts.push((sp, v == last_v));
+            start = end;
+        }
+    }
+    let n = parts.len();
+    // the text on the notes: the given spelling split to match, or the IPA itself
+    let display_parts: Vec<&str> = display.split('-').filter(|p| !p.is_empty()).collect();
+    let texts: Vec<String> = if display.is_empty() {
+        parts.iter().map(|(p, _)| p.onset.iter().chain(std::iter::once(&p.nucleus)).chain(p.coda.iter()).map(|s| s.ipa.as_str()).collect()).collect()
+    } else if display_parts.len() == n {
+        display_parts.iter().map(|p| p.to_string()).collect()
+    } else {
+        split_spelling(&display_parts.concat(), n)
+    };
+    parts
+        .into_iter()
+        .zip(texts)
+        .map(|((p, word_end), text)| Syllable { text, onset: p.onset, nucleus: p.nucleus, coda: p.coda, melisma: None, word_end, phrase_end: false })
+        .collect()
 }

@@ -1,4 +1,5 @@
-//! IPA string → segments (stress ˈ ˌ, length ː, tie bars, affricates, diphthongs, word gaps).
+//! IPA string → segments (stress ˈ ˌ, length ː, palatalization ʲ, tie bars, affricates,
+//! diphthongs, word gaps).
 
 use super::Segment;
 use serde::Deserialize;
@@ -6,8 +7,11 @@ use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
 const VOWEL_CHARS: &str = "iyɨʉɯuɪʏʊeøɘɵɤoəɛœɜɞʌɔæɐaɶɑɒɝɚ";
-const MULTI: [&str; 10] = ["tʃ", "dʒ", "ts", "dz", "pf", "aɪ", "aʊ", "ɔɪ", "eɪ", "oʊ"];
-const ALIASES: [(&str, &str); 9] = [("t͡ʃ", "tʃ"), ("d͡ʒ", "dʒ"), ("t͡s", "ts"), ("d͡z", "dz"), ("ɡ", "g"), ("ʧ", "tʃ"), ("ʤ", "dʒ"), ("r̥", "r"), ("ɐ̯", "ɐ")];
+const MULTI: [&str; 12] = ["tʃ", "dʒ", "ts", "dz", "pf", "tɕ", "dʑ", "aɪ", "aʊ", "ɔɪ", "eɪ", "oʊ"];
+/// (soft /ʃ ʒ/ are how some Russian transcriptions write щ and its voiced partner: /ɕ ʑ/ here)
+const ALIASES: [(&str, &str); 13] = [("t͡ʃ", "tʃ"), ("d͡ʒ", "dʒ"), ("t͡s", "ts"), ("d͡z", "dz"), ("t͡ɕ", "tɕ"), ("d͡ʑ", "dʑ"), ("ɡ", "g"), ("ʧ", "tʃ"), ("ʤ", "dʒ"), ("r̥", "r"), ("ɐ̯", "ɐ"), ("ʃʲ", "ɕ"), ("ʒʲ", "ʑ")];
+/// palatalization (Russian soft consonants): glued to the consonant before it ("tʲ")
+const PALATALIZED: char = 'ʲ';
 
 
 fn known() -> &'static HashSet<&'static str> {
@@ -82,6 +86,15 @@ pub fn tokenize_ipa(input: &str) -> Vec<Segment> {
         // skip combining diacritics we do not model
         while i < s.len() && ('\u{300}'..='\u{36F}').contains(&s[i]) {
             i += 1;
+        }
+        // a palatalized consonant is its own phoneme ("tʲ"); where the inventory has no soft form
+        // the mark is dropped ("ɕʲ", "tɕʲ" as some dictionaries write them are already soft)
+        if s.get(i) == Some(&PALATALIZED) {
+            i += 1;
+            let soft = format!("{tok}{PALATALIZED}");
+            if known.contains(soft.as_str()) {
+                tok = soft;
+            }
         }
         if !known.contains(tok.as_str()) {
             continue;
