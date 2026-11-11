@@ -840,7 +840,7 @@ pub fn run(ctx: &Ctx, a: &[String]) -> Result<(), String> {
     let texts: BTreeMap<String, String> = utts.iter().map(|u| (u.sentence().to_string(), u.text.clone())).collect();
     let g = g2p()?;
     let t = std::time::Instant::now();
-    let synth_phones = align_synth(&g, &said, &texts, &format!("{out_dir}/mfa"), jobs)?;
+    let synth_phones = align_synth(&g.en, &said, &texts, &format!("{out_dir}/mfa"), jobs)?;
     let aligner = aligner_id(&format!("{out_dir}/mfa"))?;
     println!("aligned {} of {} renders in {:.0} s", synth_phones.len(), said.len(), t.elapsed().as_secs_f64());
     let t = std::time::Instant::now();
@@ -1540,7 +1540,7 @@ mod tests {
         let arpa = |w: &str| g.word(w, true).iter().map(|s| to_arpa(s).unwrap()).collect::<Vec<_>>().join(" ");
         assert_eq!(arpa("of"), "AH0 V");
         assert_eq!(arpa("sheet"), "SH IY1 T");
-        assert_eq!(said_words(&g, "The hot-cross bun."), ["the", "hot", "cross", "bun"]);
+        assert_eq!(said_words(&g.en, "The hot-cross bun."), ["the", "hot", "cross", "bun"]);
     }
 
     fn scored(cost: f64, support: u64) -> Value {

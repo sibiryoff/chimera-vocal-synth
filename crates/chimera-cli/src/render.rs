@@ -12,7 +12,7 @@ use chimera::creatures::voice::CreatureVoice;
 use chimera::creatures::{CREATURES, creature_by_id};
 use chimera::math::{js_max, js_min, js_round, log10};
 use chimera::phonetics::beatbox::{BEAT_PRESETS, BEAT_SOUNDS, BeatStep, beat_ready, parse_beat};
-use chimera::phonetics::english::EnglishG2P;
+use chimera::phonetics::g2p::G2P;
 use chimera::phonetics::ipa::tokenize_ipa;
 use chimera::phonetics::planner::{
     PhraseInput, PlanOptions, plan_phrases, plan_utterance, vowel_table,
@@ -35,16 +35,23 @@ fn render_blocks(v: &mut HumanVoice, out: &mut [f32]) {
     }
 }
 
-/// The CMU dictionary (`public/data/cmudict.txt.gz`) loaded into a G2P.
-pub fn g2p() -> Result<EnglishG2P, String> {
-    let path = repo_path("public/data/cmudict.txt.gz");
+/// A gzipped text file of the repo, gunzipped.
+fn gunzip(rel: &str) -> Result<String, String> {
+    let path = repo_path(rel);
     let gz = std::fs::read(&path).map_err(|e| format!("{path}: {e}"))?;
     let mut text = String::new();
     flate2::read::GzDecoder::new(&gz[..])
         .read_to_string(&mut text)
         .map_err(|e| format!("{path}: {e}"))?;
-    let mut g = EnglishG2P::new();
-    g.load_dict(&text);
+    Ok(text)
+}
+
+/// The G2P with the CMU dictionary (`public/data/cmudict.txt.gz`) and the Russian stress
+/// dictionary (`public/data/ru-stress.txt.gz`) loaded.
+pub fn g2p() -> Result<G2P, String> {
+    let mut g = G2P::new();
+    g.en.load_dict(&gunzip("public/data/cmudict.txt.gz")?);
+    g.ru.load_dict(&gunzip("public/data/ru-stress.txt.gz")?);
     Ok(g)
 }
 
@@ -142,7 +149,7 @@ pub fn text_f0(body_name: &str) -> f64 {
 
 /// Say `text` the way `render text` does: CMUdict G2P, the phrase planner from t0 = 50 ms, the
 /// body's speaking f0, 300 ms of tail. `chimera compare tsp` measures exactly these renders.
-pub fn say(g: &EnglishG2P, text: &str, body_name: &str) -> Result<Spoken, String> {
+pub fn say(g: &G2P, text: &str, body_name: &str) -> Result<Spoken, String> {
     let b = body(body_name)?;
     let f0 = text_f0(body_name);
     let phrases = g.to_phrases(text);

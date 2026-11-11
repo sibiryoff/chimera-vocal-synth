@@ -13,6 +13,7 @@ use crate::anatomy::human::BodyMix;
 use super::english::js_is_space;
 use super::ipa::tokenize_ipa;
 use super::planner::is_vowel;
+use super::russian::{self, JOIN, has_cyrillic, is_cyrillic, is_stress_mark};
 use super::{Segment, Syllable};
 use serde::{Deserialize, Serialize};
 
@@ -162,7 +163,8 @@ fn is_word_start(c: char) -> bool {
 }
 
 /// `text.match(/[A-Za-z'][A-Za-z'\-]*|(?<=\s|^)[~-](?=\s|$)|[.,;:!?\n]/g)`, plus IPA words:
-/// `[ipa]` or `text[ipa]` (any letters in front, up to the bracket), kept whole as one token.
+/// `[ipa]` or `text[ipa]` (any letters in front, up to the bracket), kept whole as one token, and
+/// Cyrillic words.
 fn lyric_tokens(text: &str) -> Vec<String> {
     let s: Vec<char> = text.chars().collect();
     let mut out = Vec::new();
@@ -184,6 +186,16 @@ fn lyric_tokens(text: &str) -> Vec<String> {
                 i = k + 1;
                 continue;
             }
+        }
+        // a Cyrillic word (Russian), with hyphens and stress marks ("моло+ко", "кто-то")
+        if is_cyrillic(c) {
+            let start = i;
+            i += 1;
+            while i < s.len() && (is_cyrillic(s[i]) || s[i] == '-' || s[i] == '\'' || is_stress_mark(s[i])) {
+                i += 1;
+            }
+            out.push(s[start..i].iter().collect());
+            continue;
         }
         if is_word_start(c) {
             let start = i;
@@ -208,7 +220,33 @@ pub fn lyrics_to_syllables(text: &str, g2p: &impl WordSource) -> Vec<Syllable> {
     let mut out: Vec<Syllable> = Vec::new();
     // words, melisma marks and phrase punctuation, in order
     let tokens = lyric_tokens(&text.replace('’', "'"));
+    // a vowelless Russian preposition ("в", "с", "к") waiting to join the next word
+    let mut pre: Option<String> = None;
     for tok in &tokens {
+        // (a Cyrillic word with IPA in brackets is an IPA word, below)
+        if has_cyrillic(tok) && !tok.contains('[') {
+            let bare: String = tok.chars().filter(|c| !is_stress_mark(*c)).collect();
+            if !bare.chars().flat_map(char::to_lowercase).any(russian::is_vowel_letter) && bare.chars().count() <= 2 {
+                pre = Some(match pre.take() {
+                    Some(p) => format!("{p}{JOIN}{tok}"),
+                    None => tok.clone(),
+                });
+                continue;
+            }
+            // a hyphenated pair of words is two words ("чижик-пыжик"); a clitic stays on its
+            // word ("кто-то", "из-за")
+            let words: Vec<String> = if russian::is_clitic_compound(&bare) { vec![tok.clone()] } else { tok.split('-').filter(|p| !p.is_empty()).map(str::to_string).collect() };
+            for w in words {
+                let (word, display) = match pre.take() {
+                    Some(p) => (format!("{p}{JOIN}{w}"), format!("{} {w}", p.replace(JOIN, " "))),
+                    None => (w.clone(), w),
+                };
+                out.append(&mut russian_syllables(&word, &display, g2p));
+            }
+            continue;
+        }
+        // a preposition left with no word after it has nothing to sing
+        pre = None;
         if tok.chars().count() == 1 && tok.chars().all(is_lyric_punct) {
             if let Some(last) = out.last_mut() {
                 last.phrase_end = true;
@@ -256,6 +294,54 @@ fn ipa_token(tok: &str) -> Option<(&str, &str)> {
     Some((display, rest.strip_suffix(']')?))
 }
 
+/// One word's segments → open syllables, as sung: the consonants between two vowels open the next
+/// syllable, but a sonorant (/j/, a nasal, a liquid) before another consonant closes the one
+/// before ("voj.na", "fɐn.tan.kʲe", "zʲem.lʲa"; "ma.jor", "pʲe.snʲa"); `breaks[k]`: an explicit
+/// break after segment k.
+fn open_syllables(segs: &[Segment], breaks: &[bool]) -> Vec<SyllableParts> {
+    let vi: Vec<usize> = segs.iter().enumerate().filter(|(_, s)| is_vowel(&s.ipa, BodyMix::MALE)).map(|(i, _)| i).collect();
+    let mut out = Vec::with_capacity(vi.len());
+    let mut start = 0;
+    for (n, &v) in vi.iter().enumerate() {
+        let end = match vi.get(n + 1) {
+            Some(&next) => match (v..next).find(|&k| breaks.get(k).copied().unwrap_or(false)) {
+                Some(k) => k + 1,
+                None => {
+                    let mut k = v + 1;
+                    while k + 1 < next && is_sonorant(&segs[k].ipa) {
+                        k += 1;
+                    }
+                    k
+                }
+            },
+            None => segs.len(),
+        };
+        out.push(SyllableParts { onset: segs[start..v].to_vec(), nucleus: segs[v].clone(), coda: segs[v + 1..end].to_vec() });
+        start = end;
+    }
+    out
+}
+
+fn is_sonorant(ipa: &str) -> bool {
+    matches!(ipa.trim_end_matches('ʲ'), "j" | "m" | "n" | "ŋ" | "ɲ" | "l" | "ɫ" | "r" | "ɾ" | "ɹ")
+}
+
+/// One Russian word (perhaps with a joined preposition, "в|лесу") → sung syllables: the G2P's
+/// segments (unreduced: sung), open syllables, the spelling split to match for the notes.
+fn russian_syllables(word: &str, display: &str, g2p: &impl WordSource) -> Vec<Syllable> {
+    let segs = g2p.word(&word.to_lowercase(), false);
+    let parts = open_syllables(&segs, &[]);
+    let n = parts.len();
+    let shown: String = display.chars().filter(|c| !is_stress_mark(*c)).collect();
+    let texts = russian::split_spelling(&shown, n).unwrap_or_else(|| split_spelling(&shown, n));
+    parts
+        .into_iter()
+        .zip(texts)
+        .enumerate()
+        .map(|(k, (p, text))| Syllable { text, onset: p.onset, nucleus: p.nucleus, coda: p.coda, melisma: None, word_end: k + 1 == n, phrase_end: false })
+        .collect()
+}
+
 /// One bracketed IPA lyric → syllables (each IPA word ends a word). Dots and hyphens are explicit
 /// syllable breaks; elsewhere consonants between vowels open the next syllable, but a /j/ that
 /// precedes another consonant closes the one before ("voj.na", "ma.jor").
@@ -268,27 +354,9 @@ fn ipa_syllables(display: &str, ipa: &str) -> Vec<Syllable> {
         for s in segs.iter_mut() {
             s.word_end = None;
         }
-        let vi: Vec<usize> = segs.iter().enumerate().filter(|(_, s)| is_vowel(&s.ipa, BodyMix::MALE)).map(|(i, _)| i).collect();
-        let Some(&last_v) = vi.last() else { continue };
-        let mut start = 0;
-        for (n, &v) in vi.iter().enumerate() {
-            let end = match vi.get(n + 1) {
-                Some(&next) => match (v..next).find(|&k| breaks[k]) {
-                    Some(k) => k + 1,
-                    None => {
-                        let mut k = v + 1;
-                        while k + 1 < next && segs[k].ipa == "j" {
-                            k += 1;
-                        }
-                        k
-                    }
-                },
-                None => segs.len(),
-            };
-            let sp = SyllableParts { onset: segs[start..v].to_vec(), nucleus: segs[v].clone(), coda: segs[v + 1..end].to_vec() };
-            parts.push((sp, v == last_v));
-            start = end;
-        }
+        let sy = open_syllables(&segs, &breaks);
+        let n = sy.len();
+        parts.extend(sy.into_iter().enumerate().map(|(k, p)| (p, k + 1 == n)));
     }
     let n = parts.len();
     // the text on the notes: the given spelling split to match, or the IPA itself

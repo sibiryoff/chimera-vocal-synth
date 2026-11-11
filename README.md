@@ -27,6 +27,10 @@ for tests and the `chimera` CLI.
 - **Speak**: English text (CMUdict with a letter-to-sound fallback) or IPA, turned into
   gestures and prosody, with the gestural score and a consonant chart on screen.
 - **Sing**: piano roll with lyrics per note; consonants land before the beat.
+- **Russian**: type it in Cyrillic, to speak or as lyrics. Word stress comes from a 400k-form
+  dictionary (`public/data/ru-stress.txt.gz`, built by `tools/build-ru-stress.py` from CC0 data);
+  mark it yourself with `+` after the vowel (`за+мок`) or an acute (`замо́к`); ё is always stressed.
+  Spoken, unstressed vowels reduce; sung, only о → а. Hard л is `ɫ`, ы a velarized consonant + `ɨ`.
 - **Other languages through IPA**: palatalized (Russian "soft") consonants `tʲ lʲ kʲ …` and
   `ɕ ʑ tɕ dʑ` (`ʃʲ ʒʲ` read as `ɕ ʑ`); lyrics in brackets skip the dictionary, with the
   text for the notes in front and dots for syllable breaks: `песня[ˈpʲe.sʲnʲə]`, `[zvʲɪzˈda]`.

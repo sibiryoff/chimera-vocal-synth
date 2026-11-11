@@ -11,7 +11,7 @@ use chimera::math;
 use chimera::phonetics::beatbox::{self, BeatStep};
 use chimera::phonetics::planner::{self, PhraseInput, PlanOptions};
 use chimera::phonetics::sing::{self, MelismaOptions, NoteOnOptions, SongOptions, SungNote};
-use chimera::phonetics::english::EnglishG2P;
+use chimera::phonetics::g2p::G2P;
 use chimera::phonetics::{Segment, Syllable, ipa, songs, syllables, vowel_data};
 use chimera::voice::human_airway::HumanAirway;
 use serde_json::{Value, json};
@@ -31,8 +31,8 @@ struct State {
     /// (`dropModel`, from `useModel.ts`)
     models: Vec<Model>,
     next_model: usize,
-    /// the page's English G2P (one dictionary, loaded once)
-    g2p: EnglishG2P,
+    /// the page's G2P: English (CMUdict) and Russian (stress dictionary), each loaded once
+    g2p: G2P,
 }
 
 thread_local! {
@@ -119,7 +119,11 @@ fn dispatch(st: &mut State, req: &Value) -> Res {
         // ---------------------------------------------------------------- text → phonemes
         "tokenizeIpa" => to_json(&ipa::tokenize_ipa(&arg::<String>(req, "text")?)),
         "g2pLoad" => {
-            st.g2p.load_dict(&arg::<String>(req, "text")?);
+            st.g2p.en.load_dict(&arg::<String>(req, "text")?);
+            Ok(json!(true))
+        }
+        "g2pLoadRu" => {
+            st.g2p.ru.load_dict(&arg::<String>(req, "text")?);
             Ok(json!(true))
         }
         "g2pPhrases" => to_json(&st.g2p.to_phrases(&arg::<String>(req, "text")?)),

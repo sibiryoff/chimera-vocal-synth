@@ -1,0 +1,11 @@
+ru-stress.txt.gz: Russian word stress, built by tools/build-ru-stress.py from
+
+  Koziev/NLP_Datasets, https://github.com/Koziev/NLP_Datasets
+    Stress/all_accents.zip (word forms with stress, from Wikipedia and Wiktionary)
+    WordformFrequencies/Data/term2freq.7z (word-form frequencies)
+
+The datasets are released under CC0 1.0 Universal (public domain dedication):
+https://creativecommons.org/publicdomain/zero/1.0/
+
+The build keeps the 400,000 most frequent forms of two or more syllables, restores ё where the
+corpus writes it, and corrects a short list of frequent forms by hand (see the script).

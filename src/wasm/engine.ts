@@ -60,9 +60,23 @@ export function tokenizeIpa(text: string): Segment[] {
   return call("tokenizeIpa", { text });
 }
 
+/** A gzipped text file, fetched and gunzipped. */
+async function fetchGzText(url: string): Promise<string> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`dictionary ${res.status}`);
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  // servers differ: some send Content-Encoding: gzip (already inflated by the browser)
+  if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+    return await new Response(stream).text();
+  }
+  return new TextDecoder().decode(bytes);
+}
+
 /**
- * English text → phonemes: CMUdict once loaded (fetched and gunzipped here, parsed by the
- * engine), letter-to-sound rules until then. One dictionary per page (the engine keeps it).
+ * Text → phonemes: English through CMUdict once loaded (fetched and gunzipped here, parsed by the
+ * engine), letter-to-sound rules until then; Russian (any Cyrillic) through its rules, with word
+ * stress from the Russian stress dictionary once loaded. One of each per page (the engine keeps them).
  */
 export class EnglishG2P {
   private loading: Promise<void> | null = null;
@@ -72,22 +86,22 @@ export class EnglishG2P {
     return this.isLoaded;
   }
 
-  /** Load the gzipped dictionary ("word\tPHONES" lines). */
-  load(url = "/data/cmudict.txt.gz"): Promise<void> {
+  /**
+   * Load the gzipped dictionaries: English ("word\tPHONES" lines) and Russian stress
+   * ("word\tn" lines). The Russian one is optional: without it, Russian words take their stress
+   * from ё, the marks in the text or the penultimate syllable.
+   */
+  load(url = "/data/cmudict.txt.gz", ruUrl = "/data/ru-stress.txt.gz"): Promise<void> {
     if (this.isLoaded) return Promise.resolve();
     if (this.loading) return this.loading;
     this.loading = (async () => {
       try {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`dictionary ${res.status}`);
-        const bytes = new Uint8Array(await res.arrayBuffer());
-        // servers differ: some send Content-Encoding: gzip (already inflated by the browser)
-        let text: string;
-        if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
-          const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
-          text = await new Response(stream).text();
-        } else text = new TextDecoder().decode(bytes);
-        this.setDictionaryText(text);
+        const ru = fetchGzText(ruUrl).then(
+          (text) => call("g2pLoadRu", { text }),
+          () => {}, // no Russian dictionary: the rules alone
+        );
+        this.setDictionaryText(await fetchGzText(url));
+        await ru;
       } catch (e) {
         this.loading = null; // allow a retry
         throw e;
