@@ -154,11 +154,12 @@ const TIP_CURL: &[ArticKey] = &[TtX, TtY, TtCurl];
 /// the vowel's 1.0), so it colours the transitions (F2 up) without making a palatal constriction.
 const PALATAL_BODY: Tg = &[(TbX, 3.75), (TbY, 7.8)];
 
-/// /ɕ ʑ/: the blade behind the alveolar ridge, the body raised as in [`PALATAL_BODY`], the lips
-/// only slightly rounded (/ʃ ʒ/ protrude them to 0.75)
-const ALVEOLO_PALATAL: Tg = &[(TtX, 5.85), (TtY, 9.45), (Jaw, 0.35), (LipProt, 0.35), (LipWidth, 0.45), (TbX, 3.75), (TbY, 7.8)];
+/// /ɕ ʑ/: the blade just behind the alveolar ridge, the body raised as in [`PALATAL_BODY`], the
+/// lips spread, not protruded (/ʃ ʒ/ protrude them to 0.75): a short front cavity puts the noise
+/// between /ʂ/'s and /s/'s, as in Russian (щ above ш, below с)
+const ALVEOLO_PALATAL: Tg = &[(TtX, 5.95), (TtY, 9.45), (Jaw, 0.35), (LipProt, 0.0), (LipWidth, 0.65), (TbX, 3.75), (TbY, 7.8)];
 /// /tɕ dʑ/: the postalveolar closure with the same body and lips
-const ALVEOLO_PALATAL_AFFRICATE: Tg = &[(LipProt, 0.35), (LipWidth, 0.45), (TbX, 3.75), (TbY, 7.8)];
+const ALVEOLO_PALATAL_AFFRICATE: Tg = &[(LipProt, 0.0), (LipWidth, 0.65), (TbX, 3.75), (TbY, 7.8)];
 
 /// Plain consonant → its palatalized form (the plain articulation plus [`PALATAL_BODY`]).
 /// Velars are not here: soft /kʲ gʲ xʲ/ move the closure itself forward and are defined from the
@@ -190,15 +191,13 @@ const SOFT_VELAR: &[(&str, &str, &str)] = &[
 
 /// Which calibrated entry a symbol borrows when it has none of its own: a palatalized consonant
 /// its plain form's (the calibrated coordinate is the primary constriction, which palatalization
-/// leaves alone), the soft velars the palatals they are built from, /ɕ ʑ/ the postalveolars.
+/// leaves alone), the soft velars the palatals they are built from.
 /// Slices, so it allocates nothing.
 fn cal_source(ipa: &str) -> &str {
     match ipa {
         "kʲ" => "c",
         "gʲ" => "ɟ",
         "xʲ" => "ç",
-        "ɕ" => "ʃ",
-        "ʑ" => "ʒ",
         _ => ipa.strip_suffix('ʲ').unwrap_or(ipa),
     }
 }
@@ -229,9 +228,9 @@ fn base() -> Vec<PhonemeDef> {
         d.name = name;
         v.push(d);
     }
-    // Russian щ (ɕː) and ч (tɕ), and their voiced partners (/ɕ ʑ/ borrow /ʃ ʒ/'s calibration)
-    v.push(c("ɕ", "voiceless alveolo-palatal fricative", M::Fricative, Voiceless, "postalveolar", tg(ALVEOLO_PALATAL, NONE), &[TtX, TtY, Jaw], 0.12));
-    v.push(c("ʑ", "voiced alveolo-palatal fricative", M::Fricative, Voiced, "postalveolar", tg(ALVEOLO_PALATAL, NONE), &[TtX, TtY, Jaw], 0.09));
+    // Russian щ (ɕː) and ч (tɕ), and their voiced partners; /ɕ ʑ/ are calibrated like any fricative
+    v.push(c("ɕ", "voiceless alveolo-palatal fricative", M::Fricative, Voiceless, "postalveolar", tg(ALVEOLO_PALATAL, NONE), &[TtX, TtY, Jaw], 0.12).cal(0.15, TtY));
+    v.push(c("ʑ", "voiced alveolo-palatal fricative", M::Fricative, Voiced, "postalveolar", tg(ALVEOLO_PALATAL, NONE), &[TtX, TtY, Jaw], 0.09).cal(0.17, TtY));
     v.push(c("tɕ", "voiceless alveolo-palatal affricate", M::Affricate, Voiceless, "postalveolar", tg(POSTALV_STOP, ALVEOLO_PALATAL_AFFRICATE), &TIP, 0.15).rel("ɕ"));
     v.push(c("dʑ", "voiced alveolo-palatal affricate", M::Affricate, Voiced, "postalveolar", tg(POSTALV_STOP, ALVEOLO_PALATAL_AFFRICATE), &TIP, 0.13).rel("ʑ"));
     v
@@ -273,8 +272,11 @@ fn plain() -> Vec<PhonemeDef> {
         c("z", "voiced alveolar fricative", M::Fricative, Voiced, "alveolar", t(&[(TtX, 6.3), (TtY, 9.15), (Jaw, 0.3)]), &[TtX, TtY, Jaw], 0.09).cal(0.1, TtY),
         c("ʃ", "voiceless postalveolar fricative", M::Fricative, Voiceless, "postalveolar", t(&[(TtX, 5.7), (TtY, 9.5), (Jaw, 0.35), (LipProt, 0.75), (LipWidth, 0.2)]), &[TtX, TtY, Jaw, LipProt, LipWidth], 0.12).cal(0.2, TtY),
         c("ʒ", "voiced postalveolar fricative", M::Fricative, Voiced, "postalveolar", t(&[(TtX, 5.7), (TtY, 9.5), (Jaw, 0.35), (LipProt, 0.75), (LipWidth, 0.2)]), &[TtX, TtY, Jaw, LipProt, LipWidth], 0.09).cal(0.22, TtY),
-        c("ʂ", "voiceless retroflex fricative", M::Fricative, Voiceless, "retroflex", t(&[(TtX, 5.45), (TtY, 9.7), (TtCurl, 0.9)]), TIP_CURL, 0.12).cal(0.15, TtY),
-        c("ʐ", "voiced retroflex fricative", M::Fricative, Voiced, "retroflex", t(&[(TtX, 5.45), (TtY, 9.7), (TtCurl, 0.9)]), TIP_CURL, 0.09).cal(0.17, TtY),
+        // /ʂ ʐ/ (Russian ш ж): the tip curled up behind the ridge, the lips a little rounded; the
+        // cavity under the curled tip and the lips put the noise below /ʃ/'s. At TtX 5.45 the
+        // constriction sat so far behind the teeth that the incisor source faded: 12 dB below /s/.
+        c("ʂ", "voiceless retroflex fricative", M::Fricative, Voiceless, "retroflex", t(&[(TtX, 5.6), (TtY, 9.7), (TtCurl, 0.9), (LipProt, 0.4), (LipWidth, 0.35)]), &[TtX, TtY, TtCurl, LipProt, LipWidth], 0.12).cal(0.15, TtY),
+        c("ʐ", "voiced retroflex fricative", M::Fricative, Voiced, "retroflex", t(&[(TtX, 5.6), (TtY, 9.7), (TtCurl, 0.9), (LipProt, 0.4), (LipWidth, 0.35)]), &[TtX, TtY, TtCurl, LipProt, LipWidth], 0.09).cal(0.17, TtY),
         c("ç", "voiceless palatal fricative", M::Fricative, Voiceless, "palatal", t(&[(TbX, 3.75), (TbY, 8.25)]), &BODY, 0.12).cal(0.14, TbY),
         c("ʝ", "voiced palatal fricative", M::Fricative, Voiced, "palatal", t(&[(TbX, 3.75), (TbY, 8.25)]), &BODY, 0.09).cal(0.16, TbY),
         c("x", "voiceless velar fricative", M::Fricative, Voiceless, "velar", t(&[(TbX, 2.3), (TbY, 7.7)]), &[TbY], 0.12).cal(0.18, TbY),

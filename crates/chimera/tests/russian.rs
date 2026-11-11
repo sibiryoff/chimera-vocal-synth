@@ -47,10 +47,10 @@ fn alveolo_palatals_tokenize() {
 
 #[test]
 fn derived_consonants_are_not_calibrated_themselves() {
-    // `chimera calibrate consonants` fits every consonant with an `area`; the soft forms and the
-    // alveolo-palatals borrow their source's fit instead, so the committed table stays as it is
-    // (the CLI test `calibrate_consonants_reproduces_the_committed_table` failed without this)
-    for ipa in ["pʲ", "bʲ", "tʲ", "dʲ", "mʲ", "nʲ", "fʲ", "vʲ", "sʲ", "zʲ", "lʲ", "rʲ", "ɾʲ", "kʲ", "gʲ", "xʲ", "ɕ", "ʑ", "tɕ", "dʑ"] {
+    // `chimera calibrate consonants` fits every consonant with an `area`; the soft forms borrow
+    // their plain form's fit instead (the CLI test `calibrate_consonants_reproduces_the_committed_table`
+    // failed when they carried one). /ɕ ʑ/ have their own geometry and their own fit.
+    for ipa in ["pʲ", "bʲ", "tʲ", "dʲ", "mʲ", "nʲ", "fʲ", "vʲ", "sʲ", "zʲ", "lʲ", "rʲ", "ɾʲ", "kʲ", "gʲ", "xʲ", "tɕ", "dʑ"] {
         let d = phoneme(ipa, BodyMix::MALE).unwrap();
         assert_eq!((d.area, d.cal_key), (None, None), "{ipa}");
     }
@@ -79,8 +79,9 @@ fn soft_consonants_raise_the_tongue_body_and_keep_their_constriction() {
     }
     let sh = phoneme("ɕ", body).unwrap();
     assert_eq!(sh.manner, Manner::Fricative);
-    // /ɕ/ borrows /ʃ/'s calibrated tip height, but keeps its lips flatter than /ʃ/
-    assert_eq!(sh.targets.get(ArticKey::TtY), phoneme("ʃ", body).unwrap().targets.get(ArticKey::TtY));
+    // /ɕ/ has its own calibrated tip height (a narrower slit than /ʃ/'s) and lips flatter than /ʃ/
+    assert!((sh.area, sh.cal_key) == (Some(0.15), Some(ArticKey::TtY)));
+    assert_ne!(sh.targets.get(ArticKey::TtY), phoneme("ʃ", body).unwrap().targets.get(ArticKey::TtY));
     assert!(sh.targets.get(ArticKey::LipProt).unwrap() < phoneme("ʃ", body).unwrap().targets.get(ArticKey::LipProt).unwrap());
     assert_eq!(phoneme("tɕ", body).unwrap().release, Some("ɕ"));
     assert_eq!(phoneme("dʑ", body).unwrap().release, Some("ʑ"));
@@ -141,4 +142,75 @@ fn bracketed_ipa_mixes_with_punctuation_and_melisma() {
     assert_eq!(syl[2].melisma, Some(true));
     assert!(syl[4].phrase_end && syl[6].phrase_end);
     assert!(!syl[1].phrase_end);
+}
+
+// ---------------------------------------------------------------- the sibilants' noise
+
+/// "ˈaCa" rendered; for consonant `c`: its 1–11 kHz noise level (dB re the stressed vowel's total
+/// power) and the noise's centre of gravity (Hz), both over the middle 60% of the consonant.
+fn sibilant(c: &str, body: &str, f0: f64) -> (f64, f64) {
+    use chimera::voice::human_voice::{HumanVoice, SourcePatch};
+    const FS: f64 = 48000.0;
+    const N: usize = 1024;
+    let plan = plan_utterance(&tokenize_ipa(&format!("ˈa{c}a")), &PlanOptions { body: body.into(), t0: 0.05, f0: Some(f0), ..Default::default() });
+    let mut v = HumanVoice::new(FS, if body == "male" { chimera::anatomy::human::BODY_MALE } else { chimera::anatomy::human::BODY_FEMALE }, 2);
+    v.set_source(&SourcePatch::f0(f0));
+    v.schedule(&plan.gestures);
+    let mut x = vec![0.0f32; (FS * (plan.end + 0.3)).round() as usize];
+    for chunk in x.chunks_mut(128) {
+        v.render(chunk);
+    }
+    // summed power spectrum (Hann, hop N/2) over the middle 60% of a segment; bin k is k·FS/N Hz
+    let spectrum = |t0: f64, t1: f64| -> Vec<f64> {
+        let (a, b) = (((t0 + 0.2 * (t1 - t0)) * FS) as usize, ((t1 - 0.2 * (t1 - t0)) * FS) as usize);
+        let w: Vec<f64> = (0..N).map(|i| 0.5 - 0.5 * (std::f64::consts::TAU * i as f64 / N as f64).cos()).collect();
+        let mut p = vec![0.0; N / 2];
+        let mut i = a;
+        while i + N <= b.max(a + N) && i + N <= x.len() {
+            for (k, pk) in p.iter_mut().enumerate() {
+                let (mut re, mut im) = (0.0, 0.0);
+                for (j, wj) in w.iter().enumerate() {
+                    let ph = std::f64::consts::TAU * (k * j) as f64 / N as f64;
+                    let s = x[i + j] as f64 * wj;
+                    re += s * ph.cos();
+                    im -= s * ph.sin();
+                }
+                *pk += re * re + im * im;
+            }
+            i += N / 2;
+        }
+        p
+    };
+    let seg = |ipa: &str| plan.segments.iter().find(|s| s.ipa == ipa).map(|s| (s.t0, s.t1)).unwrap_or_else(|| panic!("no {ipa} in the plan"));
+    let (v0, v1) = seg("a");
+    let (c0, c1) = seg(c);
+    let vowel: f64 = spectrum(v0, v1).iter().sum();
+    let p = spectrum(c0, c1);
+    let band = |k: usize| (k as f64 * FS / N as f64, p[k]);
+    let (mut e, mut m) = (0.0, 0.0);
+    for (f, pk) in (0..N / 2).map(band).filter(|(f, _)| (1000.0..11000.0).contains(f)) {
+        e += pk;
+        m += f * pk;
+    }
+    (10.0 * (e / vowel).log10(), m / e)
+}
+
+#[test]
+#[ignore = "slow in debug builds: cargo test --release -p chimera --test russian -- --ignored"]
+fn russian_sibilants_are_ordered_and_audible() {
+    // Russian /ʂ/ (ш) is the lowest of the sibilants, /ɕ/ (щ) between it and /s/ (Kochetov 2017,
+    // "Acoustics of Russian voiceless sibilant fricatives", JIPA 47(3)); /ʂ ʐ/ were 12 and 10 dB
+    // quieter than /s z/ (the incisor source faded: the curled tip sat too far behind the teeth)
+    for (body, f0) in [("male", 112.0), ("female", 205.0)] {
+        let m: Vec<(&str, (f64, f64))> = ["s", "ɕ", "ʃ", "ʂ", "z", "ʐ"].iter().map(|c| (*c, sibilant(c, body, f0))).collect();
+        for (c, (db, cog)) in &m {
+            println!("{body} {c}: {db:6.1} dB  {:.2} kHz", cog / 1000.0);
+        }
+        let get = |c: &str| m.iter().find(|(x, _)| *x == c).unwrap().1;
+        let (s, sh_ru, sch, sh_en, z, zh) = (get("s"), get("ʂ"), get("ɕ"), get("ʃ"), get("z"), get("ʐ"));
+        assert!(sh_ru.1 + 500.0 < sch.1 && sch.1 + 300.0 < s.1, "{body}: ш < щ < с by centre of gravity");
+        assert!(sh_ru.1 < sh_en.1, "{body}: Russian ш is lower than English sh");
+        assert!(sh_ru.0 > s.0 - 6.0 && sch.0 > s.0 - 6.0, "{body}: ш and щ within 6 dB of с");
+        assert!(zh.0 > z.0 - 6.0, "{body}: ж within 6 dB of з");
+    }
 }
