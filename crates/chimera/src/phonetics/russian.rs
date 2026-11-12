@@ -9,6 +9,8 @@
 //!
 //! Unstressed о/а are [ɐ], not [ə], also away from the stress: this engine's [ə] is English schwa,
 //! calibrated with slightly rounded lips, and Russian listeners heard it as [o] ("на" as "но").
+//! In speech the syllable right before the stress is a secondary stress (so it keeps its length:
+//! Russian reduces it less than the others), and the conjunctions и, а keep a full vowel.
 
 use super::english::Phrase;
 use super::syllables::WordSource;
@@ -343,6 +345,11 @@ impl RussianG2P {
         }
         let bare: String = clean.chars().filter(|c| !is_stress_mark(*c)).collect();
         let weak = reduce && CLITICS.contains(&bare.as_str());
+        // the conjunctions и, а are a whole syllable of their own between words: a full vowel
+        // with a secondary stress (reduced to [ɪ]/[ɐ] they merged into the vowels around them and vanished)
+        if weak && matches!(bare.as_str(), "и" | "а") {
+            return vec![Segment { ipa: if bare == "и" { "i" } else { "a" }.into(), stress: Some(2), ..Default::default() }];
+        }
         devoice_final(self.word_part(&clean.replace('-', ""), reduce, weak))
     }
 
@@ -445,7 +452,8 @@ impl RussianG2P {
                 Ph::V { base, after } => {
                     let is_stressed = stress == Some(k);
                     let ipa = if is_stressed { stressed(*base) } else { reduced(*base, *after, k + 1 == n_vowels, reduce) };
-                    out.push(Segment { ipa: ipa.to_string(), stress: Some(if is_stressed { 1 } else { 0 }), ..Default::default() });
+                    let pretonic = reduce && stress == Some(k + 1);
+                    out.push(Segment { ipa: ipa.to_string(), stress: Some(if is_stressed { 1 } else if pretonic { 2 } else { 0 }), ..Default::default() });
                     k += 1;
                 }
             }

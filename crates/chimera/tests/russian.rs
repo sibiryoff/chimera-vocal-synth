@@ -215,6 +215,56 @@ fn russian_sibilants_are_ordered_and_audible() {
     }
 }
 
+// ---------------------------------------------------------------- the trill
+
+/// "ˈaCa" rendered (male): the level through consonant `c`, every 5 ms (10 ms windows), in dB re
+/// the level of the stressed vowel's middle.
+fn level_through(c: &str) -> Vec<f64> {
+    use chimera::voice::human_voice::{HumanVoice, SourcePatch};
+    const FS: f64 = 48000.0;
+    let plan = plan_utterance(&tokenize_ipa(&format!("ˈa{c}a")), &PlanOptions { body: "male".into(), t0: 0.05, f0: Some(112.0), ..Default::default() });
+    let mut v = HumanVoice::new(FS, chimera::anatomy::human::BODY_MALE, 2);
+    v.set_source(&SourcePatch::f0(112.0));
+    v.schedule(&plan.gestures);
+    let mut x = vec![0.0f32; (FS * (plan.end + 0.3)).round() as usize];
+    for chunk in x.chunks_mut(128) {
+        v.render(chunk);
+    }
+    let db = |t0: f64, t1: f64| {
+        let (a, b) = ((t0 * FS) as usize, ((t1 * FS) as usize).min(x.len()));
+        10.0 * (x[a..b].iter().map(|s| (*s as f64).powi(2)).sum::<f64>() / (b - a) as f64 + 1e-12).log10()
+    };
+    let seg = |ipa: &str| plan.segments.iter().find(|s| s.ipa == ipa).map(|s| (s.t0, s.t1)).unwrap();
+    let (v0, v1) = seg("a");
+    let vowel = db(v0 + 0.3 * (v1 - v0), v0 + 0.7 * (v1 - v0));
+    let (c0, c1) = seg(c);
+    let mut out = Vec::new();
+    let mut t = c0 - 0.01;
+    while t < c1 + 0.03 {
+        out.push(db(t, t + 0.01) - vowel);
+        t += 0.005;
+    }
+    out
+}
+
+#[test]
+#[ignore = "slow in debug builds: cargo test --release -p chimera --test russian -- --ignored"]
+fn trill_is_brief_contacts_not_a_closure() {
+    // р was one closure, longer and quieter than /d/'s own (the tip never let go between its
+    // contacts), and was heard as д: "рама" as "дама", "гора" as "кода". A trill only dips, twice
+    // when hard and once when soft, and the vowel shows between the contacts.
+    let (r, soft, d) = (level_through("r"), level_through("rʲ"), level_through("d"));
+    let min = |v: &[f64]| v.iter().cloned().fold(f64::INFINITY, f64::min);
+    println!("r {:.0?}\nrʲ {:.0?}\nd min {:.0}", r, soft, min(&d));
+    assert!(min(&d) < -35.0, "/d/ is a closure");
+    assert!(min(&r) > -22.0 && min(&r) < -6.0, "р dips, {:.1} dB, and is no closure", min(&r));
+    assert!(min(&soft) > -22.0 && min(&soft) < -4.0, "рь dips, {:.1} dB, and is no closure", min(&soft));
+    // two contacts: two dips of 4 dB or more with the vowel back up between them
+    let dips = |v: &[f64]| (1..v.len() - 1).filter(|&i| v[i] < -4.0 && v[i] <= v[i - 1] && v[i] < v[i + 1] && (v[..i].iter().cloned().fold(f64::NEG_INFINITY, f64::max) - v[i] > 3.0)).count();
+    assert_eq!(dips(&r), 2, "р: two contacts");
+    assert_eq!(dips(&soft), 1, "рь: one contact");
+}
+
 // ---------------------------------------------------------------- ы, and phrases sung back to back
 
 #[test]

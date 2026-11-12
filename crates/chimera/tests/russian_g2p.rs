@@ -92,11 +92,12 @@ fn words_across_a_phrase() {
     // vowelless prepositions join the next word: hard before и ([ɨ]), voicing follows it
     assert_eq!(said("в избе"), "vɨzbʲˈe");
     assert_eq!(said("в лесу"), "vlʲɪsˈu");
-    assert_eq!(said("к дому"), "gdɐmˈu");
+    assert_eq!(said("к дому"), "gdˈomʊ");
     assert_eq!(said("с ёлки"), "sjˈoɫkʲɪ");
     // final devoicing, then the next word's voiced obstruent voices it back
     assert_eq!(said("сад был"), "sˈad bˈɨɫ");
-    assert_eq!(said("сад и"), "sˈat ɪ");
+    // the conjunction и is a full vowel of its own (reduced, it merged into its neighbours)
+    assert_eq!(said("сад и"), "sˈat i");
     // clitics are unstressed in speech; a clitic compound has one stress
     assert_eq!(said("на столе"), "nɐ stɐlʲˈe");
     assert_eq!(said("кто-то"), "ktˈotɐ");
@@ -171,4 +172,38 @@ fn english_text_is_read_as_before() {
     let plain = EnglishG2P::new();
     assert_eq!(lyrics_to_syllables("Twinkle, twinkle, little star", g2p()), lyrics_to_syllables("Twinkle, twinkle, little star", en));
     assert!(!plain.is_loaded());
+}
+
+#[test]
+fn stress_of_common_forms() {
+    // forms the mechanically spread stress list had wrong (парке́, ужи́н, ми́нут), and forms with
+    // two stresses: the singular (мо́ря, not the plural моря́), the noun (доро́га, not the short
+    // adjective дорога́), the full adjective (си́нее, not the comparative сине́е), the locative
+    // (в лесу́, not the dative ле́су)
+    for (text, ipa) in [
+        ("в парке", "fpˈarkʲɪ"),
+        ("ужин", "ˈuʐɨn"),
+        ("минут", "mʲɪnˈut"),
+        ("у моря", "ʊ mˈorʲɐ"),
+        ("дорога", "dɐrˈogɐ"),
+        ("синее", "sʲˈinʲɪjɪ"),
+        ("в лесу", "vlʲɪsˈu"),
+        ("в году", "vgɐdˈu"),
+        ("уже", "ʊʐˈɛ"),
+    ] {
+        assert_eq!(said(text), ipa, "{text}");
+    }
+}
+
+#[test]
+fn the_syllable_before_the_stress_is_longer() {
+    // Russian rhythm: the syllable right before the stressed one is reduced less than the rest
+    // (молоко́ is [məlɐˈko]); it is marked as a secondary stress, which the Klatt rules leave
+    // unshortened. Timed like the other unstressed vowels (~50 ms), "река течёт" lost syllables.
+    let stresses = |text: &str, speech: bool| -> Vec<u8> { g2p().word(text, speech).iter().filter_map(|s| s.stress).collect() };
+    assert_eq!(stresses("молоко", true), [0, 2, 1]);
+    assert_eq!(stresses("погода", true), [2, 1, 0]);
+    assert_eq!(stresses("мама", true), [1, 0]);
+    // sung, the notes time the syllables
+    assert_eq!(stresses("молоко", false), [0, 0, 1]);
 }

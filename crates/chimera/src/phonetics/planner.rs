@@ -284,13 +284,43 @@ pub fn plan_utterance(input: &[Segment], o: &PlanOptions) -> Plan {
             Manner::Stop | Manner::Nasal => add_oral(&def.targets, t0, t1, 1.55, def.ipa),
             Manner::Tap => add_oral(&def.targets, t0, t1, 2.8, def.ipa),
             Manner::Trill => {
-                // driven trill: rapid alternation of near-closure and release at ~26 Hz
-                let n = js_max(2.0, js_round(dur * 26.0));
+                // A trill is the tip held just under the ridge (the hover) and thrown against it
+                // in short contacts, ~22 per second; between contacts the tract is open and the
+                // vowel shows through. Russian /r/ is one or two contacts. The tract's area can
+                // only close at a physiological rate (see `HumanAirway::seal_rate`), so a contact
+                // needs ~16 ms to register; one long closure instead (the tip never let go
+                // between contacts) was a plain [d]: "рама" was heard as "дама".
+                const PERIOD: f64 = 0.045;
+                const CONTACT: f64 = 0.016;
+                let n = js_max(1.0, js_round(dur / PERIOD));
+                let span = n * PERIOD;
+                let start = t0 + 0.5 * (dur - span);
+                let mut dom = ArticPatch::default();
+                let mut sec = ArticPatch::default();
+                for (k, v) in def.targets.iter() {
+                    if def.dominant.contains(&k) {
+                        dom.set(k, v);
+                    } else {
+                        sec.set(k, v);
+                    }
+                }
+                let tip = def.dominant.contains(&ArticKey::TtY);
+                if tip {
+                    let mut hover = dom;
+                    hover.set(ArticKey::TtY, 8.6);
+                    gestures.push(Gesture::new(start, start + span, 0.02, 0.02, 6.0, artic_targets(&hover)).speed(3.2).release_hold(0.02).label(def.ipa));
+                    // aimed past the ridge, so the tip is still moving when it lands
+                    dom.set(ArticKey::TtY, 9.7);
+                }
                 let mut k = 0.0;
                 while k < n {
-                    let a = t0 + (k / n) * dur;
-                    add_oral(&def.targets, a, a + 0.35 / 26.0, 3.2, def.ipa);
+                    let a = start + k * PERIOD + 0.012;
+                    gestures.push(Gesture::new(a, a + CONTACT, 0.004, 0.004, 40.0, artic_targets(&dom)).speed(3.2).release_hold(0.03).label(def.ipa));
                     k += 1.0;
+                }
+                // the rest (a soft trill's palatal body) holds through the whole trill
+                if !sec.is_empty() {
+                    gestures.push(Gesture::new(start, start + span, 0.04, 0.04, 2.2, artic_targets(&sec)).label(def.ipa));
                 }
             }
             Manner::Affricate => {
@@ -344,7 +374,10 @@ pub fn plan_utterance(input: &[Segment], o: &PlanOptions) -> Plan {
     if !open_end {
         let last = segs.last();
         let sonorant = last.is_some_and(|l| l.vowel.is_some()) || last.and_then(|l| l.def).is_some_and(|d| matches!(d.manner, Manner::Nasal | Manner::Approximant | Manner::Lateral | Manner::Tap | Manner::Trill));
-        let at = end + if sonorant { 0.045 } else { 0.015 };
+        // after a final trill the folds part at once: left voiced, the open tract after the last
+        // contact was one more vowel ("север" heard as "севере")
+        let final_trill = last.and_then(|l| l.def).is_some_and(|d| d.manner == Manner::Trill);
+        let at = end + if sonorant && !final_trill { 0.045 } else { 0.015 };
         gestures.push(Gesture::new(at, end + 0.1, 0.03, 0.06, 6.0, one(ControlKey::ABDUCTION, 0.22)).label(EXHALE_LABEL));
     }
     // ---- intonation: pitch targets on vowels

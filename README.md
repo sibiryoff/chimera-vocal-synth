@@ -28,7 +28,8 @@ for tests and the `chimera` CLI.
   gestures and prosody, with the gestural score and a consonant chart on screen.
 - **Sing**: piano roll with lyrics per note; consonants land before the beat.
 - **Russian**: type it in Cyrillic, to speak or as lyrics. Word stress comes from a 400k-form
-  dictionary (`public/data/ru-stress.txt.gz`, built by `tools/build-ru-stress.py` from CC0 data);
+  dictionary (`public/data/ru-stress.txt.gz`, built by `tools/build-ru-stress.py` from OpenRussian,
+  CC BY-SA 4.0, and CC0 data; see `public/data/RU-STRESS-LICENSE.txt`);
   mark it yourself with `+` after the vowel (`за+мок`) or an acute (`замо́к`); ё is always stressed.
   Spoken, unstressed vowels reduce; sung, only о → а. Hard л is `ɫ`, ы a velarized consonant + `ɨ`.
 - **Other languages through IPA**: palatalized (Russian "soft") consonants `tʲ lʲ kʲ …` and

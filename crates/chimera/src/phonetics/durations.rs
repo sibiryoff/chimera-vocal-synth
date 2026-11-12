@@ -36,6 +36,9 @@ fn table(ipa: &str) -> Option<(f64, f64)> {
         "aʊ" => (240.0, 100.0),
         "ɔɪ" => (280.0, 150.0),
         "ɨ" => (110.0, 40.0),
+        // the Russian reduced а/о (not in Klatt's table): between /ʌ/ and /a/. Without an entry it
+        // fell back to 80 ms inherent and came out ~40 ms unstressed — too short to be heard
+        "ɐ" => (170.0, 70.0),
         // consonants
         "p" => (85.0, 50.0),
         "t" => (75.0, 50.0),
@@ -69,6 +72,9 @@ fn table(ipa: &str) -> Option<(f64, f64)> {
         "w" => (80.0, 60.0),
         "j" => (80.0, 40.0),
         "ɾ" => (20.0, 20.0),
+        // the trill (not in Klatt's table): two contacts hard, one soft, as in Russian
+        "r" => (95.0, 75.0),
+        "rʲ" => (60.0, 45.0),
         _ => return None,
     })
 }

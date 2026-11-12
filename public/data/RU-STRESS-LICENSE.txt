@@ -1,11 +1,23 @@
-ru-stress.txt.gz: Russian word stress, built by tools/build-ru-stress.py from
+ru-stress.txt.gz: Russian word stress, built by tools/build-ru-stress.py from two sources.
 
-  Koziev/NLP_Datasets, https://github.com/Koziev/NLP_Datasets
-    Stress/all_accents.zip (word forms with stress, from Wikipedia and Wiktionary)
-    WordformFrequencies/Data/term2freq.7z (word-form frequencies)
+1. OpenRussian dictionary data, https://github.com/Badestrand/russian-dictionary
+   (the data of https://en.openrussian.org; nouns.csv, verbs.csv, adjectives.csv, others.csv,
+   commit 50e210c of 2021-08-09). Creative Commons Attribution-ShareAlike 4.0 International:
+   https://creativecommons.org/licenses/by-sa/4.0/
+   Used for the stress of every form it lists (about half of the file's forms, and nearly all of
+   the frequent ones).
 
-The datasets are released under CC0 1.0 Universal (public domain dedication):
-https://creativecommons.org/publicdomain/zero/1.0/
+2. Koziev/NLP_Datasets, https://github.com/Koziev/NLP_Datasets
+     Stress/all_accents.zip (word forms with stress, from Wikipedia and Wiktionary)
+     WordformFrequencies/Data/term2freq.7z (word-form frequencies)
+   CC0 1.0 Universal (public domain dedication):
+   https://creativecommons.org/publicdomain/zero/1.0/
+   Used for the forms OpenRussian does not list, and to rank forms by frequency.
 
-The build keeps the 400,000 most frequent forms of two or more syllables, restores ё where the
-corpus writes it, and corrects a short list of frequent forms by hand (see the script).
+Changes made: the two lists are merged into one "spelling<TAB>stressed vowel" table, a form with
+several stresses keeps one, ё is restored where the corpus writes it, the 400,000 most frequent
+forms of two or more syllables are kept, and a short list of frequent forms is corrected by hand
+(see the script).
+
+Because it adapts OpenRussian data, ru-stress.txt.gz as a whole is distributed under
+CC BY-SA 4.0. This applies to this data file only, not to the program that reads it.
